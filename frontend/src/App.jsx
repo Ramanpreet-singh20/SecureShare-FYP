@@ -338,6 +338,34 @@ function App() {
     }
   }
 
+  async function handleDeleteShare(shareId) {
+    if (!token) {
+      setMessage("You must be logged in to delete shares.");
+      return;
+    }
+  
+    try {
+      const res = await fetch(`${API_BASE}/shares/${shareId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+  
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(`Error deleting share: ${data.message || "Unknown error"}`);
+        return;
+      }
+  
+      setInbox((prev) => prev.filter((s) => s.id !== shareId));
+      setMessage("✅ Share deleted.");
+    } catch (err) {
+      console.error(err);
+      setMessage("Error: could not delete share.");
+    }
+  }
+
   async function handleLogin(e) {
     e.preventDefault();
 
@@ -949,98 +977,124 @@ function App() {
         >
           {isLoadingInbox ? "Loading..." : "Load Inbox"}
         </button>
-
         {inbox.length > 0 && (
-          <div
-            style={{
-              marginTop: "12px",
-              maxHeight: "200px",
-              overflowY: "auto",
-            }}
-          >
-            {inbox.map((share) => (
-              <div key={share.id} style={styles.shareCard}>
-                <div style={{ fontSize: "0.85rem" }}>
-                  <strong>From:</strong> {share.senderEmail}
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-                  {new Date(share.createdAt).toLocaleString()}
-                  {share.expiresAt && (
-                    <>
-                      {" · "}
-                      Expires: {new Date(share.expiresAt).toLocaleString()}
-                    </>
-                  )}
-                </div>
+  <div
+    style={{
+      marginTop: "12px",
+      maxHeight: "200px",
+      overflowY: "auto",
+    }}
+  >
+    {inbox.map((share) => {
+      const isExpired =
+        share.isExpired ||
+        (share.expiresAt && new Date(share.expiresAt) < new Date());
 
-                {share.isFile ? (
-                  <>
-                    <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
-                      <strong>Encrypted file:</strong>{" "}
-                      {share.fileName || "Unnamed file"}{" "}
-                      {share.fileSize != null &&
-                        `(${Math.round(share.fileSize / 1024)} KB)`}
-                    </div>
+      const cardStyle = {
+        ...styles.shareCard,
+        opacity: isExpired ? 0.6 : 1,
+        borderColor: isExpired ? "#4b5563" : "#1f2937",
+      };
 
-                    {fileUrls[share.id] ? (
-                      <a
-                        href={fileUrls[share.id]}
-                        download={share.fileName || "download"}
-                        style={{
-                          ...styles.secondaryButton,
-                          marginTop: "6px",
-                          display: "inline-block",
-                          textAlign: "center",
-                          textDecoration: "none",
-                        }}
-                      >
-                        Download decrypted file
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        style={{
-                          ...styles.secondaryButton,
-                          marginTop: "6px",
-                        }}
-                        onClick={() => handleDecryptFile(share.id)}
-                      >
-                        Decrypt file
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {share.decryptedText ? (
-                      <div
-                        style={{ marginTop: "6px", fontSize: "0.9rem" }}
-                      >
-                        <strong>Decrypted:</strong> {share.decryptedText}
-                      </div>
-                    ) : (
-                      <div
-                        style={{ marginTop: "6px", fontSize: "0.8rem" }}
-                      >
-                        <em>Encrypted message (ciphertext not shown)</em>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      style={{
-                        ...styles.secondaryButton,
-                        marginTop: "6px",
-                      }}
-                      onClick={() => handleDecryptShare(share.id)}
-                    >
-                      Decrypt message
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
+      return (
+        <div key={share.id} style={cardStyle}>
+          <div style={{ fontSize: "0.85rem" }}>
+            <strong>From:</strong> {share.senderEmail}
           </div>
-        )}
+          <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+            {new Date(share.createdAt).toLocaleString()}
+            {share.expiresAt && (
+              <>
+                {" · "}
+                Expires: {new Date(share.expiresAt).toLocaleString()}
+              </>
+            )}
+            {isExpired && (
+              <span style={{ marginLeft: "4px", color: "#f97316" }}>
+                (Expired)
+              </span>
+            )}
+          </div>
+
+          {share.isFile ? (
+            <>
+              <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
+                <strong>Encrypted file:</strong>{" "}
+                {share.fileName || "Unnamed file"}{" "}
+                {share.fileSize != null &&
+                  `(${Math.round(share.fileSize / 1024)} KB)`}
+              </div>
+
+              {fileUrls[share.id] ? (
+                <a
+                  href={fileUrls[share.id]}
+                  download={share.fileName || "download"}
+                  style={{
+                    ...styles.secondaryButton,
+                    marginTop: "6px",
+                    display: "inline-block",
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  Download decrypted file
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.secondaryButton,
+                    marginTop: "6px",
+                  }}
+                  onClick={() => handleDecryptFile(share.id)}
+                  disabled={isExpired}
+                >
+                  Decrypt file
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              {share.decryptedText ? (
+                <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
+                  <strong>Decrypted:</strong> {share.decryptedText}
+                </div>
+              ) : (
+                <div style={{ marginTop: "6px", fontSize: "0.8rem" }}>
+                  <em>Encrypted message (ciphertext not shown)</em>
+                </div>
+              )}
+
+              <button
+                type="button"
+                style={{
+                  ...styles.secondaryButton,
+                  marginTop: "6px",
+                }}
+                onClick={() => handleDecryptShare(share.id)}
+                disabled={isExpired}
+              >
+                Decrypt message
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            style={{
+              ...styles.secondaryButton,
+              marginTop: "6px",
+              borderColor: "#b91c1c",
+            }}
+            onClick={() => handleDeleteShare(share.id)}
+          >
+            Delete
+          </button>
+        </div>
+      );
+    })}
+  </div>
+)}
 
         {/* Status + extra info */}
         <div style={styles.messageBox}>{message}</div>
