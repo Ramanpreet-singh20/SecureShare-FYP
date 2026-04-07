@@ -97,6 +97,36 @@ router.get("/inbox", requireAuth, async (req, res) => {
   }
 });
 
+// GET /shares/sent
+router.get("/sent", requireAuth, async (req, res) => {
+  try {
+    const now = new Date();
+
+    const shares = await Share.find({
+      sender: req.user.userId,
+    })
+      .populate("recipient", "email")
+      .sort({ createdAt: -1 });
+
+    const sent = shares.map((s) => ({
+      id: s._id.toString(),
+      recipientEmail: s.recipient?.email || "Unknown",
+      isFile: s.isFile,
+      fileName: s.fileName,
+      fileType: s.fileType,
+      fileSize: s.fileSize,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+      isExpired: s.expiresAt ? s.expiresAt < now : false,
+    }));
+
+    return res.json({ ok: true, sent });
+  } catch (err) {
+    console.error("Sent shares error:", err);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
 // DELETE /shares/:id
 router.delete("/:id", requireAuth, async (req, res) => {
   try {

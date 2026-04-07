@@ -295,6 +295,10 @@ function App() {
   const [inbox, setInbox] = useState([]);
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
 
+  // Sent items
+  const [sentItems, setSentItems] = useState([]);
+  const [isLoadingSent, setIsLoadingSent] = useState(false);
+
   // For sending encrypted files
   const [fileRecipientEmail, setFileRecipientEmail] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
@@ -302,6 +306,12 @@ function App() {
 
   // For decrypted file download URLs
   const [fileUrls, setFileUrls] = useState({}); // { shareId: objectUrl }
+
+
+const [attackerCiphertext, setAttackerCiphertext] = useState("");
+const [attackerEncryptedKey, setAttackerEncryptedKey] = useState("");
+const [attackerIv, setAttackerIv] = useState("");
+const [attackerResult, setAttackerResult] = useState("");
 
   async function handleRegister(e) {
     e.preventDefault();
@@ -343,7 +353,7 @@ function App() {
       setMessage("You must be logged in to delete shares.");
       return;
     }
-  
+
     try {
       const res = await fetch(`${API_BASE}/shares/${shareId}`, {
         method: "DELETE",
@@ -351,14 +361,15 @@ function App() {
           Authorization: `Bearer ${token}`,
         },
       });
-  
+
       const data = await res.json();
       if (!res.ok) {
         setMessage(`Error deleting share: ${data.message || "Unknown error"}`);
         return;
       }
-  
+
       setInbox((prev) => prev.filter((s) => s.id !== shareId));
+      setSentItems((prev) => prev.filter((s) => s.id !== shareId));
       setMessage("✅ Share deleted.");
     } catch (err) {
       console.error(err);
@@ -459,10 +470,8 @@ function App() {
     try {
       const { publicJwk, privateJwk } = await generateRsaKeyPair();
 
-      // Save private key locally
       savePrivateKeyToLocalStorage(privateJwk);
 
-      // Send public key to backend
       const res = await fetch(`${API_BASE}/auth/public-key`, {
         method: "POST",
         headers: {
@@ -599,6 +608,38 @@ function App() {
     }
   }
 
+  async function handleLoadSentItems() {
+    if (!token) {
+      setMessage("You must be logged in to load sent items.");
+      return;
+    }
+
+    setIsLoadingSent(true);
+    setMessage("Loading sent items...");
+
+    try {
+      const res = await fetch(`${API_BASE}/shares/sent`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(`Error loading sent items: ${data.message || "Unknown error"}`);
+        return;
+      }
+
+      setSentItems(data.sent || []);
+      setMessage("✅ Sent items loaded.");
+    } catch (err) {
+      console.error(err);
+      setMessage("Error: could not load sent items.");
+    } finally {
+      setIsLoadingSent(false);
+    }
+  }
+
   async function handleDecryptShare(shareId) {
     try {
       const share = inbox.find((s) => s.id === shareId);
@@ -617,6 +658,32 @@ function App() {
     } catch (err) {
       console.error(err);
       setMessage(`Error decrypting share: ${err.message}`);
+    }
+  }
+
+  async function handleAttackerDecrypt() {
+    setAttackerResult("");
+  
+    if (!attackerCiphertext || !attackerEncryptedKey || !attackerIv) {
+      setAttackerResult("Please paste ciphertext, encryptedKey, and iv.");
+      return;
+    }
+  
+    try {
+      const fakeShare = {
+        ciphertext: attackerCiphertext.trim(),
+        encryptedKey: attackerEncryptedKey.trim(),
+        iv: attackerIv.trim(),
+      };
+  
+      const plaintext = await decryptShareWithPrivateKey(fakeShare);
+  
+      setAttackerResult(`⚠️ Unexpected success: ${plaintext}`);
+    } catch (err) {
+      console.error("Attacker decrypt failed as expected:", err);
+      setAttackerResult(
+        `✅ Decryption failed as expected. This device does not have the correct private key.`
+      );
     }
   }
 
@@ -731,7 +798,6 @@ function App() {
         <div style={styles.card}>
           <h1>SecureShare – Encrypted Sharing Demo</h1>
 
-          {/* Auth tabs */}
           <div style={styles.tabRow}>
             <button
               style={{
@@ -753,7 +819,6 @@ function App() {
             </button>
           </div>
 
-          {/* Auth form */}
           <form
             onSubmit={mode === "login" ? handleLogin : handleRegister}
             style={styles.form}
@@ -792,7 +857,6 @@ function App() {
             </button>
           </form>
 
-          {/* Just show status here */}
           <div style={styles.messageBox}>{message}</div>
         </div>
       </div>
@@ -805,7 +869,6 @@ function App() {
       <div style={styles.card}>
         <h1>SecureShare – Encrypted Sharing Demo</h1>
 
-        {/* Top bar: user info + auth actions */}
         <div
           style={{
             marginTop: "8px",
@@ -836,7 +899,6 @@ function App() {
           </div>
         </div>
 
-        {/* Keys / E2EE section */}
         <div style={{ marginTop: "4px" }}>
           <button
             type="button"
@@ -867,7 +929,6 @@ function App() {
           )}
         </div>
 
-        {/* Encrypted text send form */}
         <hr style={{ margin: "20px 0", borderColor: "#1f2937" }} />
         <h2 style={{ fontSize: "1rem", marginBottom: "8px" }}>
           Send Encrypted Message
@@ -913,7 +974,6 @@ function App() {
           </button>
         </form>
 
-        {/* Encrypted file send form */}
         <hr style={{ margin: "20px 0", borderColor: "#1f2937" }} />
         <h2 style={{ fontSize: "1rem", marginBottom: "8px" }}>
           Send Encrypted File
@@ -966,7 +1026,6 @@ function App() {
           </button>
         </form>
 
-        {/* Inbox */}
         <hr style={{ margin: "20px 0", borderColor: "#1f2937" }} />
         <h2 style={{ fontSize: "1rem", marginBottom: "8px" }}>Inbox</h2>
         <button
@@ -977,126 +1036,265 @@ function App() {
         >
           {isLoadingInbox ? "Loading..." : "Load Inbox"}
         </button>
+
         {inbox.length > 0 && (
-  <div
-    style={{
-      marginTop: "12px",
-      maxHeight: "200px",
-      overflowY: "auto",
-    }}
-  >
-    {inbox.map((share) => {
-      const isExpired =
-        share.isExpired ||
-        (share.expiresAt && new Date(share.expiresAt) < new Date());
+          <div
+            style={{
+              marginTop: "12px",
+              maxHeight: "200px",
+              overflowY: "auto",
+            }}
+          >
+            {inbox.map((share) => {
+              const isExpired =
+                share.isExpired ||
+                (share.expiresAt && new Date(share.expiresAt) < new Date());
 
-      const cardStyle = {
-        ...styles.shareCard,
-        opacity: isExpired ? 0.6 : 1,
-        borderColor: isExpired ? "#4b5563" : "#1f2937",
-      };
+              const cardStyle = {
+                ...styles.shareCard,
+                opacity: isExpired ? 0.6 : 1,
+                borderColor: isExpired ? "#4b5563" : "#1f2937",
+              };
 
-      return (
-        <div key={share.id} style={cardStyle}>
-          <div style={{ fontSize: "0.85rem" }}>
-            <strong>From:</strong> {share.senderEmail}
-          </div>
-          <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-            {new Date(share.createdAt).toLocaleString()}
-            {share.expiresAt && (
-              <>
-                {" · "}
-                Expires: {new Date(share.expiresAt).toLocaleString()}
-              </>
-            )}
-            {isExpired && (
-              <span style={{ marginLeft: "4px", color: "#f97316" }}>
-                (Expired)
-              </span>
-            )}
-          </div>
+              return (
+                <div key={share.id} style={cardStyle}>
+                  <div style={{ fontSize: "0.85rem" }}>
+                    <strong>From:</strong> {share.senderEmail}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                    {new Date(share.createdAt).toLocaleString()}
+                    {share.expiresAt && (
+                      <>
+                        {" · "}
+                        Expires: {new Date(share.expiresAt).toLocaleString()}
+                      </>
+                    )}
+                    {isExpired && (
+                      <span style={{ marginLeft: "4px", color: "#f97316" }}>
+                        (Expired)
+                      </span>
+                    )}
+                  </div>
 
-          {share.isFile ? (
-            <>
-              <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
-                <strong>Encrypted file:</strong>{" "}
-                {share.fileName || "Unnamed file"}{" "}
-                {share.fileSize != null &&
-                  `(${Math.round(share.fileSize / 1024)} KB)`}
-              </div>
+                  {share.isFile ? (
+                    <>
+                      <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
+                        <strong>Encrypted file:</strong>{" "}
+                        {share.fileName || "Unnamed file"}{" "}
+                        {share.fileSize != null &&
+                          `(${Math.round(share.fileSize / 1024)} KB)`}
+                      </div>
 
-              {fileUrls[share.id] ? (
-                <a
-                  href={fileUrls[share.id]}
-                  download={share.fileName || "download"}
-                  style={{
-                    ...styles.secondaryButton,
-                    marginTop: "6px",
-                    display: "inline-block",
-                    textAlign: "center",
-                    textDecoration: "none",
-                  }}
-                >
-                  Download decrypted file
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  style={{
-                    ...styles.secondaryButton,
-                    marginTop: "6px",
-                  }}
-                  onClick={() => handleDecryptFile(share.id)}
-                  disabled={isExpired}
-                >
-                  Decrypt file
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              {share.decryptedText ? (
-                <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
-                  <strong>Decrypted:</strong> {share.decryptedText}
+                      {fileUrls[share.id] ? (
+                        <a
+                          href={fileUrls[share.id]}
+                          download={share.fileName || "download"}
+                          style={{
+                            ...styles.secondaryButton,
+                            marginTop: "6px",
+                            display: "inline-block",
+                            textAlign: "center",
+                            textDecoration: "none",
+                          }}
+                        >
+                          Download decrypted file
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          style={{
+                            ...styles.secondaryButton,
+                            marginTop: "6px",
+                          }}
+                          onClick={() => handleDecryptFile(share.id)}
+                          disabled={isExpired}
+                        >
+                          Decrypt file
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {share.decryptedText ? (
+                        <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
+                          <strong>Decrypted:</strong> {share.decryptedText}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: "6px", fontSize: "0.8rem" }}>
+                          <em>Encrypted message (ciphertext not shown)</em>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.secondaryButton,
+                          marginTop: "6px",
+                        }}
+                        onClick={() => handleDecryptShare(share.id)}
+                        disabled={isExpired}
+                      >
+                        Decrypt message
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.secondaryButton,
+                      marginTop: "6px",
+                      borderColor: "#b91c1c",
+                    }}
+                    onClick={() => handleDeleteShare(share.id)}
+                  >
+                    Delete
+                  </button>
                 </div>
-              ) : (
-                <div style={{ marginTop: "6px", fontSize: "0.8rem" }}>
-                  <em>Encrypted message (ciphertext not shown)</em>
-                </div>
-              )}
+              );
+            })}
+          </div>
+        )}
 
-              <button
-                type="button"
-                style={{
-                  ...styles.secondaryButton,
-                  marginTop: "6px",
-                }}
-                onClick={() => handleDecryptShare(share.id)}
-                disabled={isExpired}
-              >
-                Decrypt message
-              </button>
-            </>
-          )}
+        {/* Sent Items */}
+        <hr style={{ margin: "20px 0", borderColor: "#1f2937" }} />
+        <h2 style={{ fontSize: "1rem", marginBottom: "8px" }}>Sent Items</h2>
+        <button
+          type="button"
+          style={styles.secondaryButton}
+          onClick={handleLoadSentItems}
+          disabled={isLoadingSent}
+        >
+          {isLoadingSent ? "Loading..." : "Load Sent Items"}
+        </button>
+
+        {sentItems.length > 0 && (
+          <div
+            style={{
+              marginTop: "12px",
+              maxHeight: "200px",
+              overflowY: "auto",
+            }}
+          >
+            {sentItems.map((share) => {
+              const isExpired =
+                share.isExpired ||
+                (share.expiresAt && new Date(share.expiresAt) < new Date());
+
+              const cardStyle = {
+                ...styles.shareCard,
+                opacity: isExpired ? 0.6 : 1,
+                borderColor: isExpired ? "#4b5563" : "#1f2937",
+              };
+
+              return (
+                <div key={share.id} style={cardStyle}>
+                  <div style={{ fontSize: "0.85rem" }}>
+                    <strong>To:</strong> {share.recipientEmail}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                    {new Date(share.createdAt).toLocaleString()}
+                    {share.expiresAt && (
+                      <>
+                        {" · "}
+                        Expires: {new Date(share.expiresAt).toLocaleString()}
+                      </>
+                    )}
+                    {isExpired && (
+                      <span style={{ marginLeft: "4px", color: "#f97316" }}>
+                        (Expired)
+                      </span>
+                    )}
+                  </div>
+
+                  {share.isFile ? (
+                    <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>
+                      <strong>File share:</strong>{" "}
+                      {share.fileName || "Unnamed file"}{" "}
+                      {share.fileSize != null &&
+                        `(${Math.round(share.fileSize / 1024)} KB)`}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: "6px", fontSize: "0.8rem" }}>
+                      <em>Encrypted text message</em>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.secondaryButton,
+                      marginTop: "6px",
+                      borderColor: "#b91c1c",
+                    }}
+                    onClick={() => handleDeleteShare(share.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+                {/* Attacker Demo */}
+                <hr style={{ margin: "20px 0", borderColor: "#1f2937" }} />
+        <h2 style={{ fontSize: "1rem", marginBottom: "8px" }}>
+          Attacker Demo
+        </h2>
+        <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginBottom: "8px" }}>
+          Paste an intercepted encrypted payload below and try decrypting it with
+          the current device key. If this browser does not hold the intended
+          recipient’s private key, decryption should fail.
+        </div>
+
+        <div style={styles.form}>
+          <label style={styles.label}>
+            Ciphertext
+            <textarea
+              style={{ ...styles.input, minHeight: "70px" }}
+              value={attackerCiphertext}
+              onChange={(e) => setAttackerCiphertext(e.target.value)}
+              placeholder="Paste intercepted ciphertext here"
+            />
+          </label>
+
+          <label style={styles.label}>
+            Encrypted AES Key
+            <textarea
+              style={{ ...styles.input, minHeight: "70px" }}
+              value={attackerEncryptedKey}
+              onChange={(e) => setAttackerEncryptedKey(e.target.value)}
+              placeholder="Paste intercepted encryptedKey here"
+            />
+          </label>
+
+          <label style={styles.label}>
+            IV
+            <textarea
+              style={{ ...styles.input, minHeight: "50px" }}
+              value={attackerIv}
+              onChange={(e) => setAttackerIv(e.target.value)}
+              placeholder="Paste intercepted iv here"
+            />
+          </label>
 
           <button
             type="button"
-            style={{
-              ...styles.secondaryButton,
-              marginTop: "6px",
-              borderColor: "#b91c1c",
-            }}
-            onClick={() => handleDeleteShare(share.id)}
+            style={styles.primaryButton}
+            onClick={handleAttackerDecrypt}
           >
-            Delete
+            Attempt Decrypt With Current Device Key
           </button>
-        </div>
-      );
-    })}
-  </div>
-)}
 
-        {/* Status + extra info */}
+          {attackerResult && (
+            <div style={styles.userBox}>
+              <strong>Result:</strong>
+              <div style={{ marginTop: "6px" }}>{attackerResult}</div>
+            </div>
+          )}
+        </div>
+
         <div style={styles.messageBox}>{message}</div>
 
         {token && (
@@ -1131,6 +1329,8 @@ function App() {
     </div>
   );
 }
+
+
 
 const styles = {
   container: {
