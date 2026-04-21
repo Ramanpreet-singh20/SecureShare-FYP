@@ -27,7 +27,7 @@ const shareSchema = new mongoose.Schema({
     required: true,
   },
 
-  // ---- New fields for files ----
+  // New fields for files
   isFile: {
     type: Boolean,
     default: false,

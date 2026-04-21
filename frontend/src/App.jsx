@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const API_BASE = "http://localhost:5000";
 
-// ----- Helper functions: crypto + base64 -----
+// Helper functions: crypto + base64
 
 async function generateRsaKeyPair() {
   const keyPair = await window.crypto.subtle.generateKey(
@@ -270,7 +270,7 @@ async function decryptShareToBytes(share) {
   return plainBuf; // ArrayBuffer
 }
 
-// ----- Main React component -----
+// Main React component
 
 function App() {
   const [mode, setMode] = useState("login");
